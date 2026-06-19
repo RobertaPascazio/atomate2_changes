@@ -419,8 +419,8 @@ def get_pathfinder_results(
 
     except ValueError:
         # NEBPathfinder can fail, fall back to linear interpolation if that occurs
-        all_images = pf_struct_ini[0].interpolate(
-            pf_struct_fin[1], nimages=n_images + 1, autosort_tol=0.5
+        all_images = pf_struct_ini.interpolate(
+            pf_struct_fin, nimages=n_images + 1, autosort_tol=0.5
         )
 
     return {

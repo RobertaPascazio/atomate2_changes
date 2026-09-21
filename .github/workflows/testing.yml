@@ -85,8 +85,7 @@ jobs:
         # xdist spawns multiple workers each holding a copy of the models.
         run: |
           micromamba activate a2
-          pytest -n ${{ matrix.dep-group == 'torch-limited' && '1' || 'auto' }} --cov=atomate2 --cov-report=xml tests/forcefields
-          #pytest -n auto --cov=atomate2 --cov-report=xml tests/forcefields
+          pytest --durations=5 -n ${{ matrix.dep-group == 'torch-limited' && '1' || 'auto' }} --cov=atomate2 --cov-report=xml tests/forcefields
 
       - name: Forcefield tutorial
         if: matrix.dep-group == 'torch-limited'
@@ -94,7 +93,7 @@ jobs:
           MP_API_KEY: ${{ secrets.MP_API_KEY }}
         run: |
           micromamba activate a2
-          pytest -n auto --nbmake ./tutorials/force_fields
+          pytest --durations=5 -n auto --nbmake ./tutorials/force_fields
 
       - uses: codecov/codecov-action@v1
         if: matrix.python-version == '3.11' && github.repository == 'materialsproject/atomate2'
@@ -140,7 +139,7 @@ jobs:
 
       - name: Install conda dependencies
         run: |
-          micromamba install -n a2 -c conda-forge enumlib packmol bader --yes
+          micromamba install -n a2 -c conda-forge enumlib packmol bader compilers boost eigen=3.3 cmake spglib scipy h5py --yes
 
       - name: Install dependencies
         run: |
@@ -148,10 +147,10 @@ jobs:
           python -m pip install --upgrade pip
           mkdir -p ~/.abinit/pseudos
           cp -r tests/test_data/abinit/pseudos/ONCVPSP-PBE-SR-PDv0.4 ~/.abinit/pseudos
-          uv pip install .[strict,abinit,approxneb,aims] --group tests
+          uv pip install .[strict,abinit,approxneb,aims,pheasy,alamode,hiphive] --group tests
           uv pip install torch-runstats torch_dftd
           uv pip install --no-deps nequip==0.5.6
-
+          
       - name: Install pymatgen from master if triggered by pymatgen repo dispatch
         if: github.event_name == 'repository_dispatch' && github.event.action == 'pymatgen-ci-trigger'
         run: |
@@ -169,7 +168,7 @@ jobs:
         # However this `splitting-algorithm` means that tests cannot depend sensitively on the order they're executed in.
         run: |
           micromamba activate a2
-          pytest -n auto --splits 3 --group ${{ matrix.split }} --durations-path tests/.pytest-split-durations --splitting-algorithm least_duration --ignore=tests/ase --ignore=tests/openff_md --ignore=tests/openmm_md --ignore=tests/forcefields --cov=atomate2 --cov-report=xml
+          pytest --durations=5 -n auto --splits 3 --group ${{ matrix.split }} --durations-path tests/.pytest-split-durations --splitting-algorithm least_duration --ignore=tests/ase --ignore=tests/openff_md --ignore=tests/openmm_md --ignore=tests/forcefields --ignore=tests/torchsim --cov=atomate2 --cov-report=xml
 
 
       - uses: codecov/codecov-action@v1
@@ -195,7 +194,7 @@ jobs:
         shell: bash -l {0} # enables conda/mamba env activation by reading bash profile
     strategy:
       matrix:
-        python-version: ["3.11","3.12"]
+        python-version: ["3.12"]
 
     steps:
       - name: Check out repo
@@ -214,7 +213,7 @@ jobs:
 
       - name: Install conda dependencies
         run: |  # TODO: migrate openff tests to use non smirnoff99frosst forcefields as recommended by devs
-          micromamba install -n a2 -c conda-forge enumlib packmol bader openbabel openff-toolkit==0.16.2 openff-interchange==0.3.22 --yes
+          micromamba install -n a2 -c conda-forge enumlib packmol bader openbabel openff-utilities==0.1.17 openff-toolkit==0.16.2 openff-interchange==0.3.22 --yes
 
       - name: Install dependencies
         run: |
@@ -234,7 +233,7 @@ jobs:
 
         run: |
           micromamba activate a2
-          pytest -n auto tests/{openff_md,openmm_md}
+          pytest --durations=5 -n auto tests/{openff_md,openmm_md}
 
   test-notebooks-and-ase:
     # prevent this action from running on forks
@@ -296,14 +295,14 @@ jobs:
           MP_API_KEY: ${{ secrets.MP_API_KEY }}
         run: |
           micromamba activate a2
-          pytest -n auto --nbmake ./tutorials --ignore=./tutorials/openmm_tutorial.ipynb --ignore=./tutorials/force_fields --ignore=./tutorials/torchsim_tutorial.ipynb --ignore=./tutorials/lammps_workflow.ipynb 
+          pytest --durations=5 -n auto --nbmake ./tutorials --ignore=./tutorials/openmm_tutorial.ipynb --ignore=./tutorials/force_fields --ignore=./tutorials/torchsim_tutorial.ipynb --ignore=./tutorials/lammps_workflow.ipynb --ignore=./tutorials/pheasy_workflow.ipynb --ignore=./tutorials/hiphive_workflow.ipynb 
 
       - name: Test ASE
         env:
           MP_API_KEY: ${{ secrets.MP_API_KEY }}
         run: |
           micromamba activate a2
-          pytest -n auto --splits 1 --group 1 --cov=atomate2 --cov-report=xml tests/ase
+          pytest --durations=5 -n auto --splits 1 --group 1 --cov=atomate2 --cov-report=xml tests/ase
 
       - uses: codecov/codecov-action@v1
         if: matrix.python-version == '3.11' && github.repository == 'materialsproject/atomate2'
@@ -325,6 +324,13 @@ jobs:
     defaults:
       run:
         shell: bash -l {0}
+    strategy:
+      fail-fast: false
+      matrix:
+        # TorchSim model backends have conflicting dependencies (chiefly e3nn
+        # pins), so they are split into separate dep-groups, mirroring the
+        # forcefields dep-groups above.
+        dep-group: ["mace", "generic"]
 
     steps:
       - name: Check out repo
@@ -345,28 +351,30 @@ jobs:
         run: |
           micromamba activate a2
           python -m pip install --upgrade pip
-          uv pip install torch --index-url https://download.pytorch.org/whl/cpu
-          uv pip install .[torchsim,ase,phonons] --group tests
-          uv pip install mace-torch>=0.3.3
+          uv pip install .[torchsim-${{ matrix.dep-group }},ase,phonons] --group tests \
+            --extra-index-url https://download.pytorch.org/whl/cpu \
+            --index-strategy unsafe-best-match
 
       - name: Test TorchSim
         env:
           MP_API_KEY: ${{ secrets.MP_API_KEY }}
         run: |
           micromamba activate a2
-          pytest -n auto tests/torchsim --cov=atomate2 --cov-report=xml
+          pytest --durations=5 -n auto tests/torchsim --cov=atomate2 --cov-report=xml
 
       - name: Test TorchSim notebook
+        if: matrix.dep-group == 'mace'
         env:
           MP_API_KEY: ${{ secrets.MP_API_KEY }}
         run: |
           micromamba activate a2
-          pytest -n auto --nbmake ./tutorials/torchsim_tutorial.ipynb
+          pytest --durations=5 -n auto --nbmake ./tutorials/torchsim_tutorial.ipynb
 
       - uses: codecov/codecov-action@v1
         if: github.repository == 'materialsproject/atomate2'
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
+          name: coverage-torchsim-${{ matrix.dep-group }}
           file: ./coverage.xml
 
   docs:

@@ -50,6 +50,7 @@ def get_stable_inserted_results(
     insertions_per_step: int = 4,
     n_steps: int | None = None,
     n_inserted: int = 0,
+    charge_insertion_generator: ChargeInterstitialGenerator | None = None,
 ) -> Response:
     """Attempt ion insertion.
 
@@ -83,6 +84,10 @@ def get_stable_inserted_results(
     n_inserted:
         The number of ions inserted so far, used to help assign a unique name to the
         different jobs.
+    charge_insertion_generator:
+        The charge insertion generator to use to propose candidate sites.
+        If None, defaults to ChargeInterstitialGenerator() (set in
+        get_inserted_structures).
     """
     if (
         (structure is None)
@@ -101,6 +106,7 @@ def get_stable_inserted_results(
         get_charge_density,
         inserted_species=inserted_element,
         insertions_per_step=insertions_per_step,
+        charge_insertion_generator=charge_insertion_generator,
     )
     relax_jobs = get_relaxed_job_summaries(
         structures=insertion_job.output, relax_maker=relax_maker, append_name=add_name
@@ -121,6 +127,7 @@ def get_stable_inserted_results(
         insertions_per_step=insertions_per_step,
         n_steps=n_steps,
         n_inserted=n_inserted + 1,
+        charge_insertion_generator=charge_insertion_generator,
     )
 
     combine_job = get_computed_entries(next_step.output, min_en_job.output)

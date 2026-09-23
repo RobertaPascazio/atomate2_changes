@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from jobflow import Flow, Maker
+from pymatgen.analysis.defects.generators import ChargeInterstitialGenerator
 from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
 
 from atomate2.common.jobs.electrode import (
@@ -74,6 +75,10 @@ class ElectrodeInsertionMaker(Maker, ABC):
         A maker to perform static calculations.
     structure_matcher: StructureMatcher
         The structure matcher to use to determine if additional insertion is needed.
+    charge_insertion_generator: ChargeInterstitialGenerator | None
+        The charge insertion generator used to propose candidate insertion sites.
+        If None, defaults to ChargeInterstitialGenerator() (pymatgen-analysis-defects'
+        stock generator).
     """
 
     relax_maker: Maker
@@ -85,6 +90,7 @@ class ElectrodeInsertionMaker(Maker, ABC):
             comparator=ElementComparator(),
         )
     )
+    charge_insertion_generator: ChargeInterstitialGenerator | None = None
 
     def __post_init__(self) -> None:
         """Ensure that the static maker will store the desired data."""
@@ -137,6 +143,7 @@ class ElectrodeInsertionMaker(Maker, ABC):
             n_steps=n_steps,
             insertions_per_step=insertions_per_step,
             n_inserted=1,
+            charge_insertion_generator=self.charge_insertion_generator,
         )
         relaxed_summary = RelaxJobSummary(
             structure=relax.output.structure,

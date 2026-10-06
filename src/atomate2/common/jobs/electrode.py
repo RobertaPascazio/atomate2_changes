@@ -111,8 +111,8 @@ def get_stable_inserted_results(
         ref_structure=structure,
         structure_matcher=structure_matcher,
     )
-    next_step = get_stable_inserted_results(
-        structure=min_en_job.output[0],
+    continue_job = _continue_insertion_if_possible(
+        min_en_summary=min_en_job.output,
         inserted_element=inserted_element,
         structure_matcher=structure_matcher,
         static_maker=static_maker,
@@ -122,19 +122,60 @@ def get_stable_inserted_results(
         n_steps=n_steps,
         n_inserted=n_inserted + 1,
     )
-
-    combine_job = get_computed_entries(next_step.output, min_en_job.output)
     replace_flow = Flow(
         jobs=[
             static_job,
             insertion_job,
             relax_jobs,
             min_en_job,
-            next_step,
-            combine_job,
+            continue_job,
         ],
-        output=combine_job.output,
+        output=continue_job.output,
     )
+    return Response(replace=replace_flow)
+
+
+@job
+def _continue_insertion_if_possible(
+    min_en_summary: RelaxJobSummary | None,
+    inserted_element: ElementLike,
+    structure_matcher: StructureMatcher,
+    static_maker: Maker,
+    relax_maker: Maker,
+    get_charge_density: Callable,
+    insertions_per_step: int,
+    n_steps: int | None,
+    n_inserted: int,
+    charge_insertion_generator: ChargeInterstitialGenerator | None,
+) -> Response:
+    """Recurse into the next insertion step, or stop cleanly if none survived.
+
+    get_stable_inserted_results cannot check min_en_job's result before building
+    the next recursive step, since that value isn't resolved until runtime -- so
+    without this intermediate job, a step where no candidate survives the
+    topotactic filter (min_en_summary is None) crashes trying to index into None
+    instead of terminating the way n_steps/empty-structure termination already
+    does. This job runs after min_en_job resolves, so it can check the real value
+    and either stop here (returning just this step's entry, same as
+    get_computed_entries's own None handling) or continue the recursion.
+    """
+    if min_en_summary is None:
+        return Response(output=[])
+
+    next_step = get_stable_inserted_results(
+        structure=min_en_summary[0],
+        inserted_element=inserted_element,
+        structure_matcher=structure_matcher,
+        static_maker=static_maker,
+        relax_maker=relax_maker,
+        get_charge_density=get_charge_density,
+        insertions_per_step=insertions_per_step,
+        n_steps=n_steps,
+        n_inserted=n_inserted,
+        charge_insertion_generator=charge_insertion_generator,
+    )
+    combine_job = get_computed_entries(next_step.output, min_en_summary)
+    replace_flow = Flow(jobs=[next_step, combine_job], output=combine_job.output)
     return Response(replace=replace_flow)
 
 

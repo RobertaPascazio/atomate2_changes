@@ -296,7 +296,8 @@ def get_min_energy_summary(
     topotactic_summaries = [
         summary
         for summary in relaxed_summaries
-        if structure_matcher.fit(ref_structure, summary.structure)
+        if summary.structure is not None
+        and structure_matcher.fit(ref_structure, summary.structure)
     ]
 
     if len(topotactic_summaries) == 0:

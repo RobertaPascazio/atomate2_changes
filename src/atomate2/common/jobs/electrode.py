@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, NamedTuple
 from emmet.core.electrode import InsertionElectrodeDoc
 from emmet.core.mpid import MPID, AlphaID, check_ulid
 from emmet.core.structure_group import StructureGroupDoc
-from jobflow import Flow, Maker, Response, job
+from jobflow import Flow, Maker, OnMissing, Response, job
 from pymatgen.analysis.defects.generators import ChargeInterstitialGenerator
 from pymatgen.entries.computed_entries import ComputedStructureEntry
 from ulid import ULID
@@ -117,6 +117,13 @@ def get_stable_inserted_results(
         ref_structure=structure,
         structure_matcher=structure_matcher,
     )
+    # A candidate relax job can fizzle outright (e.g. VASP convergence failure),
+    # leaving no output for jobflow to resolve at all -- without this, resolving
+    # relaxed_summaries raises before get_min_energy_summary's own
+    # `structure is not None` filtering ever runs. Same pattern already used for
+    # this exact "tolerate a fizzled upstream job" scenario in approx_neb.py,
+    # elastic.py, and elph.py.
+    min_en_job.config.on_missing_references = OnMissing.NONE
     continue_job = _continue_insertion_if_possible(
         min_en_summary=min_en_job.output,
         inserted_element=inserted_element,
